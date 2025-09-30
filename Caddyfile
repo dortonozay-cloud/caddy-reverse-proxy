@@ -1,11 +1,11 @@
 # global options
 {
-	admin off # theres no need for the admin api in railway's environment
-	persist_config off # storage isn't persistent anyway
-	auto_https off # railway handles https for us, this could in some cases cause issues if left enabled
+	admin off 
+	persist_config off 
+	auto_https off 
 	# runtime logs
 	log {
-		format json # set runtime log format to json mode 
+		format json
 	}
 	# server options
 	servers {
@@ -13,6 +13,7 @@
 	}
 }
 
+# Snippet for Load Balancing configuration
 (lb_settings) {
 	lb_policy round_robin
 	lb_retries 100
@@ -20,6 +21,7 @@
 	lb_try_interval 250ms
 }
 
+# Snippet for Passive Health Checks
 (passive_health_checks) {
 	fail_duration 60s
 	max_fails 300
@@ -27,44 +29,20 @@
 	unhealthy_request_count 200
 }
 
-# site block, listens on the $PORT environment variable, automatically assigned by railway
+# Main Site Block: Listens on the $PORT assigned by Railway
 :{$PORT} {
-	# access logs
+	# Access logs
 	log {
-		format json # set access log format to json mode
+		format json
 	}
-
-	# proxy all requests for /* to the frontend, configure these variables in the service settings
-	reverse_proxy {
-		# for private networking replicas are exposed as multiple dns results, use those dns results as the upstreams
-		dynamic a {
-			name {$FRONTEND_DOMAIN}
-			port {$FRONTEND_PORT}
-			refresh 1s
-			dial_timeout 30s
-			versions ipv4 ipv6
-		}
-
-		# configure load balancing settings
-		import lb_settings
-
-		# configure passive health checks
-		import passive_health_checks
-
-		# sets the Host header to the header to the dynamic name and port options
-		header_up Host {upstream_hostport}
-	}
-
-	# the handle_path directive WILL strip /api/ from the path before proxying
-	# use `handle` instead of `handle_path` if you dont want to strip the /api/ path
-	# this is needed if your backend's api routes don't start with /api/
-	# change paths as needed
-	handle_path {$BACKEND_PATH:/api}/* {
-		# the /api/ prefix WILL be stripped from the uri sent to the proxy host
-		#
-		# proxy all requests for /api/* to the backend, configure this variable in the service settings
+    
+	# --------------------------------------------------------------------------
+	# 1. API Route: Proxy requests starting with /api/ to the Backend service
+	# --------------------------------------------------------------------------
+	@api path /api/*
+	handle @api {
 		reverse_proxy {
-			# for private networking replicas are exposed as multiple dns results, use those dns results as the upstreams
+			# Direct traffic to the Backend service using its variables
 			dynamic a {
 				name {$BACKEND_DOMAIN}
 				port {$BACKEND_PORT}
@@ -72,15 +50,26 @@
 				dial_timeout 30s
 				versions ipv4 ipv6
 			}
-
-			# configure load balancing settings
 			import lb_settings
-
-			# configure passive health checks
 			import passive_health_checks
+		}
+	}
 
-			# sets the Host header to the header to the dynamic name and port options
-			header_up Host {upstream_hostport}
+	# --------------------------------------------------------------------------
+	# 2. Default Route: Proxy all other requests to the Frontend service
+	# --------------------------------------------------------------------------
+	handle {
+		reverse_proxy {
+			# Direct traffic to the Frontend service using its variables
+			dynamic a {
+				name {$FRONTEND_DOMAIN}
+				port {$FRONTEND_PORT}
+				refresh 1s
+				dial_timeout 30s
+				versions ipv4 ipv6
+			}
+			import lb_settings
+			import passive_health_checks
 		}
 	}
 }
